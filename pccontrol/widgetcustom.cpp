@@ -1,0 +1,277 @@
+#include "widgetcustom.h"
+#include "settings.h"
+#include "../ImGui/imgui.h"
+#include <math.h>
+
+struct WidgetState {
+    int activeFinger = -1;
+    bool touched = false;
+    int releaseFrames = 0;
+};
+
+static WidgetState s_widgetStates[MAX_CUSTOM_WIDGETS];
+static WidgetState s_macro1State;
+static WidgetState s_macro2State;
+static int s_macro2Timer = 0;
+
+static int s_dragFinger = -1;
+static int s_dragWidgetIdx = 0; // 1..10: widgets, 11: Macro1, 12: Macro2
+
+static bool IsPointInCustomButton(float x, float y, float centerX, float centerY, float size)
+{
+    float radius = size * 0.5f;
+    float dx = x - centerX;
+    float dy = y - centerY;
+    return (dx * dx + dy * dy) <= (radius * radius);
+}
+
+static bool HandleSingleButtonTouch(
+    int type,
+    int fingerId,
+    int x,
+    int y,
+    bool enabled,
+    float centerX,
+    float centerY,
+    float size,
+    WidgetState& state)
+{
+    if (!enabled || IsPCControlMenuVisible()) return false;
+
+    bool inside = IsPointInCustomButton((float)x, (float)y, centerX, centerY, size);
+
+    if (type == 2) // Down
+    {
+        if (state.activeFinger == -1 && inside)
+        {
+            state.activeFinger = fingerId;
+            state.touched = true;
+            return true;
+        }
+    }
+    else if (type == 3) // Move
+    {
+        if (fingerId == state.activeFinger)
+        {
+            state.touched = inside;
+            return true;
+        }
+    }
+    else if (type == 1) // Up
+    {
+        if (fingerId == state.activeFinger)
+        {
+            if (state.touched) state.releaseFrames = 2;
+            state.touched = false;
+            state.activeFinger = -1;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool HandleCustomWidgetTouch(int type, int fingerId, int x, int y)
+{
+    for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
+    {
+        if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.widgets[i].enabled,
+                                   g_pcSettings.widgets[i].posX, g_pcSettings.widgets[i].posY,
+                                   g_pcSettings.widgets[i].size, s_widgetStates[i]))
+        {
+            return true;
+        }
+    }
+
+    if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.enableMacro1,
+                               g_pcSettings.macro1PosX, g_pcSettings.macro1PosY,
+                               g_pcSettings.macro1Size, s_macro1State))
+    {
+        return true;
+    }
+
+    if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.enableMacro2,
+                               g_pcSettings.macro2PosX, g_pcSettings.macro2PosY,
+                               g_pcSettings.macro2Size, s_macro2State))
+    {
+        if (type == 2) s_macro2Timer = 0;
+        return true;
+    }
+
+    return false;
+}
+
+static int AlphaFromOpacity(int alpha)
+{
+    float opacity = g_pcSettings.customWidgetOpacity;
+    if (opacity < 0.0f) opacity = 0.0f;
+    if (opacity > 1.0f) opacity = 1.0f;
+    return (int)((float)alpha * opacity);
+}
+
+static void DrawCustomCircleButton(const char* label, float centerX, float centerY, float size, bool touched, int selectionIdx)
+{
+    if (g_pcSettings.customWidgetOpacity <= 0.0f) return;
+
+    ImDrawList* dl = ImGui::GetBackgroundDrawList();
+    if (!dl) return;
+
+    ImVec2 center(centerX, centerY);
+    float radius = size * 0.5f;
+
+    bool isSelected = IsPCControlMenuVisible() && (g_pcSettings.selectedWidget == selectionIdx);
+
+    ImU32 fill = touched ? IM_COL32(255, 255, 255, AlphaFromOpacity(180)) : IM_COL32(20, 20, 20, AlphaFromOpacity(130));
+    ImU32 border = touched ? IM_COL32(255, 255, 255, AlphaFromOpacity(230)) : IM_COL32(255, 255, 255, AlphaFromOpacity(160));
+
+    if (isSelected)
+    {
+        border = IM_COL32(255, 255, 0, AlphaFromOpacity(255));
+        fill = IM_COL32(60, 60, 0, AlphaFromOpacity(150));
+    }
+
+    ImU32 text = IM_COL32(255, 255, 255, AlphaFromOpacity(230));
+
+    dl->AddCircleFilled(center, radius, fill, 48);
+    dl->AddCircle(center, radius, border, 48, isSelected ? 5.0f : 3.0f);
+
+    float fontSize = radius * 0.55f;
+    ImVec2 textSize = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
+    dl->AddText(ImGui::GetFont(), fontSize, ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f), text, label);
+}
+
+void RenderCustomWidgets()
+{
+    const char* actionLabels[] = { "NONE", "VC", "TGT", "JMP", "CRH" };
+
+    for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
+    {
+        if (g_pcSettings.widgets[i].enabled)
+        {
+            int actionIdx = g_pcSettings.widgets[i].action;
+            if (actionIdx < 0 || actionIdx >= 5) actionIdx = 0;
+            DrawCustomCircleButton(actionLabels[actionIdx], g_pcSettings.widgets[i].posX,
+                                  g_pcSettings.widgets[i].posY, g_pcSettings.widgets[i].size,
+                                  s_widgetStates[i].touched, i + 1);
+        }
+    }
+
+    if (g_pcSettings.enableMacro1)
+    {
+        DrawCustomCircleButton("M1", g_pcSettings.macro1PosX, g_pcSettings.macro1PosY,
+                              g_pcSettings.macro1Size, s_macro1State.touched, 11);
+    }
+
+    if (g_pcSettings.enableMacro2)
+    {
+        DrawCustomCircleButton("M2", g_pcSettings.macro2PosX, g_pcSettings.macro2PosY,
+                              g_pcSettings.macro2Size, s_macro2State.touched, 12);
+    }
+}
+
+bool HandleWidgetDragging(int type, int fingerId, int x, int y)
+{
+    if (!IsPCControlMenuVisible()) return false;
+
+    if (type == 2) // Down
+    {
+        for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
+        {
+            if (g_pcSettings.widgets[i].enabled && IsPointInCustomButton((float)x, (float)y, g_pcSettings.widgets[i].posX, g_pcSettings.widgets[i].posY, g_pcSettings.widgets[i].size))
+            {
+                s_dragFinger = fingerId;
+                s_dragWidgetIdx = i + 1;
+                g_pcSettings.selectedWidget = i + 1;
+                return true;
+            }
+        }
+        if (g_pcSettings.enableMacro1 && IsPointInCustomButton((float)x, (float)y, g_pcSettings.macro1PosX, g_pcSettings.macro1PosY, g_pcSettings.macro1Size))
+        {
+            s_dragFinger = fingerId;
+            s_dragWidgetIdx = 11;
+            g_pcSettings.selectedWidget = 11;
+            return true;
+        }
+        if (g_pcSettings.enableMacro2 && IsPointInCustomButton((float)x, (float)y, g_pcSettings.macro2PosX, g_pcSettings.macro2PosY, g_pcSettings.macro2Size))
+        {
+            s_dragFinger = fingerId;
+            s_dragWidgetIdx = 12;
+            g_pcSettings.selectedWidget = 12;
+            return true;
+        }
+    }
+    else if (type == 3) // Move
+    {
+        if (fingerId == s_dragFinger)
+        {
+            if (s_dragWidgetIdx >= 1 && s_dragWidgetIdx <= MAX_CUSTOM_WIDGETS)
+            {
+                g_pcSettings.widgets[s_dragWidgetIdx - 1].posX = (float)x;
+                g_pcSettings.widgets[s_dragWidgetIdx - 1].posY = (float)y;
+            }
+            else if (s_dragWidgetIdx == 11) { g_pcSettings.macro1PosX = (float)x; g_pcSettings.macro1PosY = (float)y; }
+            else if (s_dragWidgetIdx == 12) { g_pcSettings.macro2PosX = (float)x; g_pcSettings.macro2PosY = (float)y; }
+            return true;
+        }
+    }
+    else if (type == 1) // Up
+    {
+        if (fingerId == s_dragFinger)
+        {
+            s_dragFinger = -1;
+            s_dragWidgetIdx = 0;
+            SavePCControlSettings();
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool IsActionTouched(eWidgetAction action)
+{
+    for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
+    {
+        if (g_pcSettings.widgets[i].enabled && g_pcSettings.widgets[i].action == (int)action)
+        {
+            if (s_widgetStates[i].touched) return true;
+        }
+    }
+
+    if (action == ACTION_MACRO1) return s_macro1State.touched;
+    if (action == ACTION_MACRO2) return s_macro2State.touched;
+
+    return false;
+}
+
+int GetActionReleaseFrames(eWidgetAction action)
+{
+    int maxFrames = 0;
+    for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
+    {
+        if (g_pcSettings.widgets[i].enabled && g_pcSettings.widgets[i].action == (int)action)
+        {
+            if (s_widgetStates[i].releaseFrames > maxFrames) maxFrames = s_widgetStates[i].releaseFrames;
+        }
+    }
+
+    if (action == ACTION_MACRO1 && s_macro1State.releaseFrames > maxFrames) maxFrames = s_macro1State.releaseFrames;
+    if (action == ACTION_MACRO2 && s_macro2State.releaseFrames > maxFrames) maxFrames = s_macro2State.releaseFrames;
+
+    return maxFrames;
+}
+
+void UpdateWidgetReleaseFrames()
+{
+    for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
+    {
+        if (s_widgetStates[i].releaseFrames > 0) s_widgetStates[i].releaseFrames--;
+    }
+    if (s_macro1State.releaseFrames > 0) s_macro1State.releaseFrames--;
+    if (s_macro2State.releaseFrames > 0) s_macro2State.releaseFrames--;
+
+    if (s_macro2State.touched) s_macro2Timer++;
+    else s_macro2Timer = 0;
+}
+
+int GetMacro2Timer() { return s_macro2Timer; }

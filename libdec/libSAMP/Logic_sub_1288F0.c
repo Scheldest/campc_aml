@@ -1,0 +1,16 @@
+// ADDR: 0x128460
+// SYMBOL: sub_128460
+int __fastcall sub_128460(int a1)
+{
+  void *v2; // r0
+
+  if ( *(_DWORD *)(a1 + 4) )
+  {
+    v2 = (void *)sub_128650();
+    operator delete(v2);
+  }
+  return a1;
+}
+
+
+// ======================================================================

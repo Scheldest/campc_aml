@@ -1,0 +1,16 @@
+// ADDR: 0x2141c4
+// SYMBOL: sub_2141C4
+int __fastcall sub_2141C4(unsigned int a1)
+{
+  unsigned int v1; // r1
+  int v2; // r3
+
+  v1 = 1233 * (32 - __clz(a1 | 1));
+  v2 = v1 >> 12;
+  if ( dword_D8EF0[v1 >> 12] > a1 )
+    v2 = (v1 >> 12) - 1;
+  return v2 + 1;
+}
+
+
+// ======================================================================

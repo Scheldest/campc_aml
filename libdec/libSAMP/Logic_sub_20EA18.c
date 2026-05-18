@@ -1,0 +1,10 @@
+// ADDR: 0x22033c
+// SYMBOL: sub_22033C
+// attributes: thunk
+int __fastcall sub_22033C(int a1, int a2, int a3, int a4)
+{
+  return sub_2249AC(a1, a2, a3, a4);
+}
+
+
+// ======================================================================

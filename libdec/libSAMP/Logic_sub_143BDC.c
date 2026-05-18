@@ -1,0 +1,24 @@
+// ADDR: 0x17c45c
+// SYMBOL: sub_17C45C
+int sub_17C45C()
+{
+  int v0; // r0
+  int v1; // r4
+  int result; // r0
+
+  v0 = sub_17C080();
+  if ( !v0 )
+    return sub_2242C8(4, "AXL", "Env not loaded. (SetBinderState)");
+  v1 = v0;
+  sub_17C1B8(v0);
+  result = (*(int (__fastcall **)(int))(*(_DWORD *)v1 + 912))(v1);
+  if ( result )
+  {
+    (*(void (__fastcall **)(int))(*(_DWORD *)v1 + 64))(v1);
+    return (*(int (__fastcall **)(int))(*(_DWORD *)v1 + 68))(v1);
+  }
+  return result;
+}
+
+
+// ======================================================================
