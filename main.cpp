@@ -172,6 +172,16 @@ void CalculateWASD(void* self, int& outX, int& outY)
 
 int HookOf_GetPedWalkLeftRight(void* self) {
     if (!self) return 0;
+
+    float customX, customY;
+    GetCustomAnalogValues(customX, customY);
+    if (customX != 0.0f || customY != 0.0f) {
+        g_cachedX = (int)customX;
+        g_cachedY = (int)customY;
+        g_lastPed = self;
+        return g_cachedX;
+    }
+
     if (!g_pcSettings.enableAnalogPatch) return GetPedWalkLeftRight(self);
     CalculateWASD(self, g_cachedX, g_cachedY);
     g_lastPed = self;
@@ -180,6 +190,17 @@ int HookOf_GetPedWalkLeftRight(void* self) {
 
 int HookOf_GetPedWalkUpDown(void* self) {
     if (!self) return 0;
+
+    float customX, customY;
+    GetCustomAnalogValues(customX, customY);
+    if (customX != 0.0f || customY != 0.0f) {
+        if (self == g_lastPed) return g_cachedY;
+        g_cachedX = (int)customX;
+        g_cachedY = (int)customY;
+        g_lastPed = self;
+        return g_cachedY;
+    }
+
     if (!g_pcSettings.enableAnalogPatch) return GetPedWalkUpDown(self);
     if (self == g_lastPed) return g_cachedY;
     CalculateWASD(self, g_cachedX, g_cachedY);
@@ -309,6 +330,7 @@ int HookOf_IsReleased(int widgetId, void* a2, int a3)
 
 static bool IsCustomSprintTouched()
 {
+    if (IsActionTouched(ACTION_SPRINT)) return true;
     return IsTouched && (IsTouched(31, nullptr, 1) || IsTouched(168, nullptr, 1));
 }
 

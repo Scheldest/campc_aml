@@ -7,6 +7,8 @@ struct WidgetState {
     int activeFinger = -1;
     bool touched = false;
     int releaseFrames = 0;
+    float analogX = 0.0f;
+    float analogY = 0.0f;
 };
 
 static WidgetState s_widgetStates[MAX_CUSTOM_WIDGETS];
@@ -31,14 +33,20 @@ static bool HandleSingleButtonTouch(
     int x,
     int y,
     bool enabled,
+    int wtype,
     float centerX,
     float centerY,
     float size,
-    WidgetState& state)
+    WidgetState& state,
+    bool& outShouldBlock)
 {
     if (!enabled || IsPCControlMenuVisible()) return false;
 
     bool inside = IsPointInCustomButton((float)x, (float)y, centerX, centerY, size);
+    bool isSlideType = (wtype == WTYPE_SLIDE || wtype == WTYPE_SLIDE_PASS);
+    bool isPassType = (wtype == WTYPE_PASSTHROUGH || wtype == WTYPE_SLIDE_PASS);
+
+    outShouldBlock = false;
 
     if (type == 2) // Down
     {
@@ -46,6 +54,7 @@ static bool HandleSingleButtonTouch(
         {
             state.activeFinger = fingerId;
             state.touched = true;
+            if (!isPassType) outShouldBlock = true;
             return true;
         }
     }
@@ -54,6 +63,14 @@ static bool HandleSingleButtonTouch(
         if (fingerId == state.activeFinger)
         {
             state.touched = inside;
+            if (!isPassType) outShouldBlock = true;
+            return true;
+        }
+        else if (isSlideType && state.activeFinger == -1 && inside)
+        {
+            state.activeFinger = fingerId;
+            state.touched = true;
+            if (!isPassType) outShouldBlock = true;
             return true;
         }
     }
@@ -64,6 +81,7 @@ static bool HandleSingleButtonTouch(
             if (state.touched) state.releaseFrames = 2;
             state.touched = false;
             state.activeFinger = -1;
+            if (!isPassType) outShouldBlock = true;
             return true;
         }
     }
@@ -73,32 +91,59 @@ static bool HandleSingleButtonTouch(
 
 bool HandleCustomWidgetTouch(int type, int fingerId, int x, int y)
 {
+    bool blocked = false;
     for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
     {
+        bool shouldBlock = false;
         if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.widgets[i].enabled,
+                                   g_pcSettings.widgets[i].type,
                                    g_pcSettings.widgets[i].posX, g_pcSettings.widgets[i].posY,
-                                   g_pcSettings.widgets[i].size, s_widgetStates[i]))
+                                   g_pcSettings.widgets[i].size, s_widgetStates[i], shouldBlock))
         {
-            return true;
+            if (g_pcSettings.widgets[i].action == ACTION_DPAD)
+            {
+                if (type == 3 || type == 2) // Move or Down
+                {
+                    float dx = (float)x - g_pcSettings.widgets[i].posX;
+                    float dy = (float)y - g_pcSettings.widgets[i].posY;
+                    float radius = g_pcSettings.widgets[i].size * 0.5f;
+                    if (radius > 0.1f)
+                    {
+                        s_widgetStates[i].analogX = (dx / radius) * 127.0f;
+                        s_widgetStates[i].analogY = (dy / radius) * 127.0f;
+                        if (s_widgetStates[i].analogX > 127.0f) s_widgetStates[i].analogX = 127.0f;
+                        if (s_widgetStates[i].analogX < -127.0f) s_widgetStates[i].analogX = -127.0f;
+                        if (s_widgetStates[i].analogY > 127.0f) s_widgetStates[i].analogY = 127.0f;
+                        if (s_widgetStates[i].analogY < -127.0f) s_widgetStates[i].analogY = -127.0f;
+                    }
+                }
+                else if (type == 1) // Up
+                {
+                    s_widgetStates[i].analogX = 0;
+                    s_widgetStates[i].analogY = 0;
+                }
+            }
+            if (shouldBlock) blocked = true;
         }
     }
 
-    if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.enableMacro1,
+    bool mShouldBlock = false;
+    if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.enableMacro1, WTYPE_DEFAULT,
                                g_pcSettings.macro1PosX, g_pcSettings.macro1PosY,
-                               g_pcSettings.macro1Size, s_macro1State))
+                               g_pcSettings.macro1Size, s_macro1State, mShouldBlock))
     {
-        return true;
+        if (mShouldBlock) blocked = true;
     }
 
-    if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.enableMacro2,
+    if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.enableMacro2, WTYPE_DEFAULT,
                                g_pcSettings.macro2PosX, g_pcSettings.macro2PosY,
-                               g_pcSettings.macro2Size, s_macro2State))
+                               g_pcSettings.macro2Size, s_macro2State, mShouldBlock))
     {
         if (type == 2) s_macro2Timer = 0;
-        return true;
+        if (mShouldBlock) blocked = true;
     }
 
-    return false;
+    return blocked;
 }
 
 static int AlphaFromOpacity(int alpha)
@@ -109,7 +154,7 @@ static int AlphaFromOpacity(int alpha)
     return (int)((float)alpha * opacity);
 }
 
-static void DrawCustomCircleButton(const char* label, float centerX, float centerY, float size, bool touched, int selectionIdx)
+static void DrawCustomCircleButton(const char* label, float centerX, float centerY, float size, bool touched, int selectionIdx, float analogX = 0, float analogY = 0)
 {
     if (g_pcSettings.customWidgetOpacity <= 0.0f) return;
 
@@ -135,6 +180,13 @@ static void DrawCustomCircleButton(const char* label, float centerX, float cente
     dl->AddCircleFilled(center, radius, fill, 48);
     dl->AddCircle(center, radius, border, 48, isSelected ? 5.0f : 3.0f);
 
+    if (touched && (analogX != 0 || analogY != 0))
+    {
+        float knobX = (analogX / 127.0f) * radius;
+        float knobY = (analogY / 127.0f) * radius;
+        dl->AddCircleFilled(ImVec2(center.x + knobX, center.y + knobY), radius * 0.3f, IM_COL32(255, 255, 255, AlphaFromOpacity(200)), 24);
+    }
+
     float fontSize = radius * 0.55f;
     ImVec2 textSize = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
     dl->AddText(ImGui::GetFont(), fontSize, ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f), text, label);
@@ -142,17 +194,17 @@ static void DrawCustomCircleButton(const char* label, float centerX, float cente
 
 void RenderCustomWidgets()
 {
-    const char* actionLabels[] = { "NONE", "VC", "TGT", "JMP", "CRH" };
+    const char* actionLabels[] = { "NONE", "VC", "TGT", "JMP", "CRH", "SPR", "DPD" };
 
     for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
     {
         if (g_pcSettings.widgets[i].enabled)
         {
             int actionIdx = g_pcSettings.widgets[i].action;
-            if (actionIdx < 0 || actionIdx >= 5) actionIdx = 0;
+            if (actionIdx < 0 || actionIdx >= 7) actionIdx = 0;
             DrawCustomCircleButton(actionLabels[actionIdx], g_pcSettings.widgets[i].posX,
                                   g_pcSettings.widgets[i].posY, g_pcSettings.widgets[i].size,
-                                  s_widgetStates[i].touched, i + 1);
+                                  s_widgetStates[i].touched, i + 1, s_widgetStates[i].analogX, s_widgetStates[i].analogY);
         }
     }
 
@@ -266,12 +318,34 @@ void UpdateWidgetReleaseFrames()
     for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
     {
         if (s_widgetStates[i].releaseFrames > 0) s_widgetStates[i].releaseFrames--;
+        if (!s_widgetStates[i].touched)
+        {
+            s_widgetStates[i].analogX = 0;
+            s_widgetStates[i].analogY = 0;
+        }
     }
     if (s_macro1State.releaseFrames > 0) s_macro1State.releaseFrames--;
     if (s_macro2State.releaseFrames > 0) s_macro2State.releaseFrames--;
 
     if (s_macro2State.touched) s_macro2Timer++;
     else s_macro2Timer = 0;
+}
+
+void GetCustomAnalogValues(float& x, float& y)
+{
+    x = 0; y = 0;
+    for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
+    {
+        if (g_pcSettings.widgets[i].enabled && g_pcSettings.widgets[i].action == ACTION_DPAD)
+        {
+            if (s_widgetStates[i].touched)
+            {
+                x = s_widgetStates[i].analogX;
+                y = s_widgetStates[i].analogY;
+                return;
+            }
+        }
+    }
 }
 
 int GetMacro2Timer() { return s_macro2Timer; }

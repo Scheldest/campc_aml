@@ -7,14 +7,25 @@ enum eWidgetAction
     ACTION_TARGET,
     ACTION_JUMP,
     ACTION_CROUCH,
+    ACTION_SPRINT,
+    ACTION_DPAD,
     ACTION_MACRO1,
     ACTION_MACRO2
+};
+
+enum eWidgetType
+{
+    WTYPE_DEFAULT = 0,      // Blocks touch, Click to activate
+    WTYPE_PASSTHROUGH,      // Allows touch behind, Click to activate
+    WTYPE_SLIDE,            // Blocks touch, Slide to activate
+    WTYPE_SLIDE_PASS        // Allows touch behind, Slide to activate
 };
 
 struct CustomWidget
 {
     bool enabled;
     int action; // eWidgetAction
+    int type;   // eWidgetType
     float posX;
     float posY;
     float size;

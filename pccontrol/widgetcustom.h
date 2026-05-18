@@ -10,5 +10,6 @@ bool HandleWidgetDragging(int type, int fingerId, int x, int y);
 bool IsActionTouched(eWidgetAction action);
 int GetActionReleaseFrames(eWidgetAction action);
 void UpdateWidgetReleaseFrames();
+void GetCustomAnalogValues(float& x, float& y);
 
 int GetMacro2Timer();

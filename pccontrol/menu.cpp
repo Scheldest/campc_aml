@@ -66,6 +66,7 @@ void RenderPCControlMenu()
                         {
                             g_pcSettings.widgets[i].enabled = true;
                             g_pcSettings.widgets[i].action = (int)ACTION_NONE;
+                            g_pcSettings.widgets[i].type = (int)WTYPE_DEFAULT;
                             g_pcSettings.widgets[i].posX = 500.0f;
                             g_pcSettings.widgets[i].posY = 500.0f;
                             g_pcSettings.widgets[i].size = 120.0f;
@@ -82,9 +83,9 @@ void RenderPCControlMenu()
                     if (g_pcSettings.widgets[i].enabled)
                     {
                         char label[64];
-                        const char* actionNames[] = { "NONE", "VC Shoot", "Target", "Jump", "Crouch" };
+                        const char* actionNames[] = { "NONE", "VC Shoot", "Target", "Jump", "Crouch", "Sprint", "Analog/DPAD" };
                         int act = g_pcSettings.widgets[i].action;
-                        if (act < 0 || act > 4) act = 0;
+                        if (act < 0 || act > 6) act = 0;
 
                         sprintf(label, "Button %d [%s]", i + 1, actionNames[act]);
                         if (ImGui::Selectable(label, g_pcSettings.selectedWidget == (i + 1)))
@@ -108,8 +109,11 @@ void RenderPCControlMenu()
                     int idx = g_pcSettings.selectedWidget - 1;
                     ImGui::Text("Editing Button %d", idx + 1);
 
-                    const char* actions[] = { "NONE", "VC Shoot", "Target", "Jump", "Crouch" };
+                    const char* actions[] = { "NONE", "VC Shoot", "Target", "Jump", "Crouch", "Sprint", "Analog/DPAD" };
                     changed |= ImGui::Combo("Action", &g_pcSettings.widgets[idx].action, actions, IM_ARRAYSIZE(actions));
+
+                    const char* types[] = { "Default (Block)", "Passthrough (Camera)", "Slide-to-Activate", "Slide + Pass" };
+                    changed |= ImGui::Combo("Behavior", &g_pcSettings.widgets[idx].type, types, IM_ARRAYSIZE(types));
 
                     changed |= ImGui::SliderFloat("Pos X", &g_pcSettings.widgets[idx].posX, 0.0f, 3000.0f, "%.0f");
                     changed |= ImGui::SliderFloat("Pos Y", &g_pcSettings.widgets[idx].posY, 0.0f, 2000.0f, "%.0f");
