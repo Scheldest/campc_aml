@@ -275,14 +275,14 @@ void RenderCustomWidgets()
 
     if (g_pcSettings.enableMacro1)
     {
-        DrawCustomCircleButton("M1", g_pcSettings.macro1PosX, g_pcSettings.macro1PosY,
-                              g_pcSettings.macro1Size, s_macro1State.touched, 11);
+        DrawCustomWidget("M1", g_pcSettings.macro1PosX, g_pcSettings.macro1PosY,
+                              g_pcSettings.macro1Size, s_macro1State.touched, 11, ACTION_MACRO1);
     }
 
     if (g_pcSettings.enableMacro2)
     {
-        DrawCustomCircleButton("M2", g_pcSettings.macro2PosX, g_pcSettings.macro2PosY,
-                              g_pcSettings.macro2Size, s_macro2State.touched, 12);
+        DrawCustomWidget("M2", g_pcSettings.macro2PosX, g_pcSettings.macro2PosY,
+                              g_pcSettings.macro2Size, s_macro2State.touched, 12, ACTION_MACRO2);
     }
 }
 
