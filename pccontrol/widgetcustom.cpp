@@ -94,40 +94,87 @@ bool HandleCustomWidgetTouch(int type, int fingerId, int x, int y)
     bool blocked = false;
     for (int i = 0; i < MAX_CUSTOM_WIDGETS; ++i)
     {
-        bool shouldBlock = false;
-        if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.widgets[i].enabled,
-                                   g_pcSettings.widgets[i].type,
-                                   g_pcSettings.widgets[i].posX, g_pcSettings.widgets[i].posY,
-                                   g_pcSettings.widgets[i].size, s_widgetStates[i], shouldBlock))
+        CustomWidget& w = g_pcSettings.widgets[i];
+        if (!w.enabled || IsPCControlMenuVisible()) continue;
+
+        WidgetState& state = s_widgetStates[i];
+        bool inside = IsPointInCustomButton((float)x, (float)y, w.posX, w.posY, w.size);
+        bool isDPAD = (w.action == ACTION_DPAD);
+        bool isPassType = (w.type == WTYPE_PASSTHROUGH || w.type == WTYPE_SLIDE_PASS);
+        bool isSlideType = (w.type == WTYPE_SLIDE || w.type == WTYPE_SLIDE_PASS);
+
+        if (type == 2) // Down
         {
-            if (g_pcSettings.widgets[i].action == ACTION_DPAD)
+            if (state.activeFinger == -1 && inside)
             {
-                if (type == 3 || type == 2) // Move or Down
-                {
-                    float dx = (float)x - g_pcSettings.widgets[i].posX;
-                    float dy = (float)y - g_pcSettings.widgets[i].posY;
-                    float radius = g_pcSettings.widgets[i].size * 0.5f;
-                    if (radius > 0.1f)
-                    {
-                        s_widgetStates[i].analogX = (dx / radius) * 127.0f;
-                        s_widgetStates[i].analogY = (dy / radius) * 127.0f;
-                        if (s_widgetStates[i].analogX > 127.0f) s_widgetStates[i].analogX = 127.0f;
-                        if (s_widgetStates[i].analogX < -127.0f) s_widgetStates[i].analogX = -127.0f;
-                        if (s_widgetStates[i].analogY > 127.0f) s_widgetStates[i].analogY = 127.0f;
-                        if (s_widgetStates[i].analogY < -127.0f) s_widgetStates[i].analogY = -127.0f;
-                    }
-                }
-                else if (type == 1) // Up
-                {
-                    s_widgetStates[i].analogX = 0;
-                    s_widgetStates[i].analogY = 0;
-                }
+                state.activeFinger = fingerId;
+                state.touched = true;
+                if (!isPassType) blocked = true;
             }
-            if (shouldBlock) blocked = true;
+        }
+        else if (type == 3) // Move
+        {
+            if (fingerId == state.activeFinger)
+            {
+                if (!isDPAD) state.touched = inside; // Non-DPAD behaves normally
+                else state.touched = true; // DPAD stays active once grabbed
+
+                if (!isPassType) blocked = true;
+            }
+            else if (isSlideType && state.activeFinger == -1 && inside)
+            {
+                state.activeFinger = fingerId;
+                state.touched = true;
+                if (!isPassType) blocked = true;
+            }
+        }
+        else if (type == 1) // Up
+        {
+            if (fingerId == state.activeFinger)
+            {
+                if (state.touched) state.releaseFrames = 2;
+                state.touched = false;
+                state.activeFinger = -1;
+                state.analogX = 0;
+                state.analogY = 0;
+                if (!isPassType) blocked = true;
+            }
+        }
+
+        // Logic specifically for DPAD movement calculation
+        if (isDPAD && state.activeFinger != -1 && (type == 3 || type == 2))
+        {
+            float dx = (float)x - w.posX;
+            float dy = (float)y - w.posY;
+            float mag = sqrtf(dx * dx + dy * dy);
+
+            if (mag > 15.0f) // Deadzone
+            {
+                float angle = atan2f(dy, dx);
+                // Snap to 8 directions (45 degrees steps)
+                float snapped = roundf(angle / (3.14159265f / 4.0f)) * (3.14159265f / 4.0f);
+
+                state.analogX = cosf(snapped) * 127.0f;
+                state.analogY = sinf(snapped) * 127.0f;
+
+                // Fine-tuning for perfect 127/-127 or 0 values on clean axes
+                if (fabsf(state.analogX) < 1.0f) state.analogX = 0;
+                if (fabsf(state.analogY) < 1.0f) state.analogY = 0;
+                if (state.analogX > 120.0f) state.analogX = 127.0f;
+                if (state.analogX < -120.0f) state.analogX = -127.0f;
+                if (state.analogY > 120.0f) state.analogY = 127.0f;
+                if (state.analogY < -120.0f) state.analogY = -127.0f;
+            }
+            else
+            {
+                state.analogX = 0;
+                state.analogY = 0;
+            }
         }
     }
 
     bool mShouldBlock = false;
+    // Macro 1 & 2 use Default logic
     if (HandleSingleButtonTouch(type, fingerId, x, y, g_pcSettings.enableMacro1, WTYPE_DEFAULT,
                                g_pcSettings.macro1PosX, g_pcSettings.macro1PosY,
                                g_pcSettings.macro1Size, s_macro1State, mShouldBlock))
@@ -154,7 +201,7 @@ static int AlphaFromOpacity(int alpha)
     return (int)((float)alpha * opacity);
 }
 
-static void DrawCustomCircleButton(const char* label, float centerX, float centerY, float size, bool touched, int selectionIdx, float analogX = 0, float analogY = 0)
+static void DrawCustomWidget(const char* label, float centerX, float centerY, float size, bool touched, int selectionIdx, int action, float analogX = 0, float analogY = 0)
 {
     if (g_pcSettings.customWidgetOpacity <= 0.0f) return;
 
@@ -165,6 +212,7 @@ static void DrawCustomCircleButton(const char* label, float centerX, float cente
     float radius = size * 0.5f;
 
     bool isSelected = IsPCControlMenuVisible() && (g_pcSettings.selectedWidget == selectionIdx);
+    bool isDPAD = (action == ACTION_DPAD);
 
     ImU32 fill = touched ? IM_COL32(255, 255, 255, AlphaFromOpacity(180)) : IM_COL32(20, 20, 20, AlphaFromOpacity(130));
     ImU32 border = touched ? IM_COL32(255, 255, 255, AlphaFromOpacity(230)) : IM_COL32(255, 255, 255, AlphaFromOpacity(160));
@@ -175,21 +223,37 @@ static void DrawCustomCircleButton(const char* label, float centerX, float cente
         fill = IM_COL32(60, 60, 0, AlphaFromOpacity(150));
     }
 
-    ImU32 text = IM_COL32(255, 255, 255, AlphaFromOpacity(230));
+    ImU32 textCol = IM_COL32(255, 255, 255, AlphaFromOpacity(230));
 
-    dl->AddCircleFilled(center, radius, fill, 48);
-    dl->AddCircle(center, radius, border, 48, isSelected ? 5.0f : 3.0f);
-
-    if (touched && (analogX != 0 || analogY != 0))
+    if (isDPAD)
     {
-        float knobX = (analogX / 127.0f) * radius;
-        float knobY = (analogY / 127.0f) * radius;
-        dl->AddCircleFilled(ImVec2(center.x + knobX, center.y + knobY), radius * 0.3f, IM_COL32(255, 255, 255, AlphaFromOpacity(200)), 24);
+        // Square style for DPAD
+        dl->AddRectFilled(ImVec2(center.x - radius, center.y - radius), ImVec2(center.x + radius, center.y + radius), fill, 10.0f);
+        dl->AddRect(ImVec2(center.x - radius, center.y - radius), ImVec2(center.x + radius, center.y + radius), border, 10.0f, 0, isSelected ? 5.0f : 3.0f);
+
+        // Draw 8-way directional hints
+        float arrowSize = radius * 0.2f;
+        ImU32 arrowCol = IM_COL32(255, 255, 255, AlphaFromOpacity(100));
+        // Simple dots or lines for 8 directions
+        for (int i = 0; i < 8; ++i)
+        {
+            float ang = i * (3.14159265f / 4.0f);
+            dl->AddCircleFilled(ImVec2(center.x + cosf(ang) * radius * 0.7f, center.y + sinf(ang) * radius * 0.7f), 3.0f, arrowCol);
+        }
     }
+    else
+    {
+        // Circle style for others
+        dl->AddCircleFilled(center, radius, fill, 48);
+        dl->AddCircle(center, radius, border, 48, isSelected ? 5.0f : 3.0f);
+    }
+
+    // No knob for DPAD as requested, only for non-DPAD analog if we had one (but we don't use it now)
+    // We removed knob from DPAD.
 
     float fontSize = radius * 0.55f;
     ImVec2 textSize = ImGui::GetFont()->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
-    dl->AddText(ImGui::GetFont(), fontSize, ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f), text, label);
+    dl->AddText(ImGui::GetFont(), fontSize, ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f), textCol, label);
 }
 
 void RenderCustomWidgets()
@@ -202,9 +266,10 @@ void RenderCustomWidgets()
         {
             int actionIdx = g_pcSettings.widgets[i].action;
             if (actionIdx < 0 || actionIdx >= 7) actionIdx = 0;
-            DrawCustomCircleButton(actionLabels[actionIdx], g_pcSettings.widgets[i].posX,
+            DrawCustomWidget(actionLabels[actionIdx], g_pcSettings.widgets[i].posX,
                                   g_pcSettings.widgets[i].posY, g_pcSettings.widgets[i].size,
-                                  s_widgetStates[i].touched, i + 1, s_widgetStates[i].analogX, s_widgetStates[i].analogY);
+                                  s_widgetStates[i].touched, i + 1, g_pcSettings.widgets[i].action,
+                                  s_widgetStates[i].analogX, s_widgetStates[i].analogY);
         }
     }
 

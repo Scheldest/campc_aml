@@ -117,7 +117,7 @@ void RenderPCControlMenu()
 
                     changed |= ImGui::SliderFloat("Pos X", &g_pcSettings.widgets[idx].posX, 0.0f, 3000.0f, "%.0f");
                     changed |= ImGui::SliderFloat("Pos Y", &g_pcSettings.widgets[idx].posY, 0.0f, 2000.0f, "%.0f");
-                    changed |= ImGui::SliderFloat("Size", &g_pcSettings.widgets[idx].size, 40.0f, 280.0f, "%.0f");
+                    changed |= ImGui::SliderFloat("Size", &g_pcSettings.widgets[idx].size, 40.0f, 1000.0f, "%.0f");
                 }
 
                 ImGui::Spacing();
